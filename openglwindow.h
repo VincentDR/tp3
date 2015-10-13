@@ -64,6 +64,9 @@ public:
 public slots:
     void renderNow();
 
+   virtual void newConnection();
+   virtual void changeSeason();
+
 protected:
 
     bool event(QEvent *event);

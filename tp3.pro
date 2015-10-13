@@ -1,6 +1,12 @@
+QT += network
+
 INCLUDEPATH += $$PWD
-SOURCES += $$PWD/openglwindow.cpp
-HEADERS += $$PWD/openglwindow.h
+SOURCES += $$PWD/openglwindow.cpp \
+    particules.cpp \
+    point.cpp
+HEADERS += $$PWD/openglwindow.h \
+    particules.h \
+    point.h
 
 SOURCES += \
     main.cpp

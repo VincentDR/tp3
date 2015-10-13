@@ -136,3 +136,10 @@ void OpenGLWindow::renderNow()
 
 }
 
+void OpenGLWindow::newConnection(){
+
+}
+
+void OpenGLWindow::changeSeason(){
+
+}

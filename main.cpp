@@ -1,4 +1,4 @@
-#include "openglwindow.h"
+
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QMatrix4x4>
@@ -14,14 +14,16 @@
 
 #include <QtCore>
 #include <QtGui>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
+#include <QThread>
+
+#include "point.h"
+#include "particules.h"
+
 using namespace std;
 
 
-
-struct point
-{
-    float x, y ,z;
-};
 
 class paramCamera
 {
@@ -33,6 +35,7 @@ public:
 
     int etat = 0;
 };
+
 
 class TriangleWindow : public OpenGLWindow
 {
@@ -56,11 +59,16 @@ public:
     void loadMap(QString localPath);
     paramCamera* c;
 
+    //TP3
+    void displaySeasons();
+    void setSeason(int);
+
+
 private:
     bool master = false;
     int m_frame;
     QImage m_image;
-    point *p;
+    Point *p;
 
 
     int carte=1;
@@ -70,7 +78,42 @@ private:
 
     QTimer *timer;
 
+
+    //Tp3
+    int season = 0;
+    QTimer *timerFiveMinutes;
+    QTcpServer *server;
+    QTcpSocket *socket;
+
+    std::vector<QTcpSocket*> sockets;
+
+    Particules *particules;
+
+
+public slots:
+    void newConnection();
+    void changeSeason(){
+        for(int i = 0 ; i < sockets.size() ; i++){
+            sockets.at(i)->write("season");
+        }
+        season++;
+        season %= 4;
+        setSeason(season);
+        //qDebug()<<"Je suis à la saison "<<season<<endl;
+    }
 };
+
+void TriangleWindow::newConnection(){
+
+    socket = server->nextPendingConnection();
+    if(socket->state() == QTcpSocket::ConnectedState)
+    {
+        //qDebug()<<socket->peerAddress();
+    }
+    sockets.push_back(socket);
+}
+
+
 
 TriangleWindow::TriangleWindow()
 {
@@ -83,7 +126,21 @@ TriangleWindow::TriangleWindow()
     timer = new QTimer();
     timer->connect(timer, SIGNAL(timeout()),this, SLOT(renderNow()));
     timer->start(maj);
-    master = true;
+
+     timerFiveMinutes = new QTimer();
+     timerFiveMinutes->connect(timerFiveMinutes, SIGNAL(timeout()),this,SLOT(changeSeason()));
+     timerFiveMinutes->setInterval(1000*5);
+     timerFiveMinutes->start();
+
+     master = true;
+     server = new QTcpServer(this);
+     socket = NULL;
+
+     connect(server, SIGNAL(newConnection()), this, SLOT(newConnection()));
+     server->listen(QHostAddress::Any, 4567);
+     //sockets = new std::vector<QTcpSocket*>();
+
+     loadMap(":/bureau256.png");
 }
 TriangleWindow::TriangleWindow(int _maj)
 {
@@ -98,6 +155,20 @@ TriangleWindow::TriangleWindow(int _maj)
     timer = new QTimer();
     timer->connect(timer, SIGNAL(timeout()),this, SLOT(renderNow()));
     timer->start(maj);
+
+    socket = new QTcpSocket(this);
+    server = NULL;
+
+    socket->connectToHost(/*socket->localAddress()*/"127.0.0.1",4567);
+
+    if(socket->waitForConnected(5000)){
+        //qDebug("La connection est établie, bravo Vincent!");
+    }else{
+        //qDebug("La connection n'est pas établie, mais tu avance!");
+    }
+
+    loadMap(":/bureau256.png");
+
 }
 int main(int argc, char **argv)
 {
@@ -109,32 +180,37 @@ int main(int argc, char **argv)
 
     paramCamera* c=new paramCamera();
 
+
     TriangleWindow window;
     window.c = c;
     window.setFormat(format);
     window.resize(500,375);
     window.setPosition(0,0);
     window.show();
+    window.setSeason(0);
 
-    TriangleWindow window2(100);
+    TriangleWindow window2(20);//(100);
     window2.c = c;
     window2.setFormat(format);
     window2.resize(500,375);
     window2.setPosition(500, 0);
+    window2.setSeason(1);  
     window2.show();
 
-    TriangleWindow window3(500);
+    TriangleWindow window3(20);//(500);
     window3.c = c;
     window3.setFormat(format);
     window3.resize(500,375);
     window3.setPosition(0, 450);
+    window3.setSeason(2);   
     window3.show();
 
-    TriangleWindow window4(1000);
+    TriangleWindow window4(20);//(1000);
     window4.c = c;
     window4.setFormat(format);
     window4.resize(500,375);
     window4.setPosition(500,450);
+    window4.setSeason(3);    
     window4.show();
 
     return app.exec();
@@ -154,7 +230,7 @@ void TriangleWindow::initialize()
     glOrtho(-1.0, 1.0, -1.0, 1.0, -100.0, 100.0);
 
 
-    loadMap(":/bureau256.png");
+    //loadMap(":/bureau256.png");
 
 }
 
@@ -167,7 +243,7 @@ void TriangleWindow::loadMap(QString localPath)
 
 
     uint id = 0;
-    p = new point[m_image.width() * m_image.height()];
+    p = new Point[m_image.width() * m_image.height()];
     QRgb pixel;
     for(int i = 0; i < m_image.width(); i++)
     {
@@ -178,9 +254,9 @@ void TriangleWindow::loadMap(QString localPath)
 
             id = i*m_image.width() +j;
 
-            p[id].x = (float)i/(m_image.width()) - ((float)m_image.width()/2.0)/m_image.width();
-            p[id].y = (float)j/(m_image.height()) - ((float)m_image.height()/2.0)/m_image.height();
-            p[id].z = 0.001f * (float)(qRed(pixel));
+            p[id].setX((float)i/(m_image.width()) - ((float)m_image.width()/2.0)/m_image.width());
+            p[id].setY((float)j/(m_image.height()) - ((float)m_image.height()/2.0)/m_image.height());
+            p[id].setZ(0.001f * (float)(qRed(pixel)));
         }
     }
 }
@@ -189,7 +265,6 @@ void TriangleWindow::render()
 {
 
     glClear(GL_COLOR_BUFFER_BIT);
-
 
     glLoadIdentity();
     glScalef(c->ss,c->ss,c->ss);
@@ -231,8 +306,15 @@ void TriangleWindow::render()
         displayPoints();
         break;
     }
-
     ++m_frame;
+    if(server == NULL){
+        if(socket->readAll() == "season"){
+            season ++;
+            season %= 4;
+            setSeason(season);
+        }
+    }
+
 }
 
 bool TriangleWindow::event(QEvent *event)
@@ -327,18 +409,21 @@ void TriangleWindow::keyPressEvent(QKeyEvent *event)
 
 void TriangleWindow::displayPoints()
 {
-    glColor3f(1.0f, 1.0f, 1.0f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+    displaySeasons();
+    glPointSize(1);
     glBegin(GL_POINTS);
     uint id = 0;
+
     for(int i = 0; i < m_image.width(); i++)
     {
         for(int j = 0; j < m_image.height(); j++)
         {
-            id = i*m_image.width() +j;
+            id = i*m_image.width() +j;            
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
         }
     }
@@ -348,7 +433,8 @@ void TriangleWindow::displayPoints()
 
 void TriangleWindow::displayTriangles()
 {
-    glColor3f(1.0f, 1.0f, 1.0f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+    displaySeasons();
     glBegin(GL_TRIANGLES);
     uint id = 0;
 
@@ -359,37 +445,37 @@ void TriangleWindow::displayTriangles()
 
             id = i*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
 
 
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j+1;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
         }
     }
 
@@ -398,7 +484,9 @@ void TriangleWindow::displayTriangles()
 
 void TriangleWindow::displayTrianglesC()
 {
-    glColor3f(1.0f, 1.0f, 1.0f);
+
+    //glColor3f(1.0f, 1.0f, 1.0f);
+    displaySeasons();
     glBegin(GL_TRIANGLES);
     uint id = 0;
 
@@ -409,37 +497,37 @@ void TriangleWindow::displayTrianglesC()
             glColor3f(0.0f, 1.0f, 0.0f);
             id = i*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
 
             glColor3f(1.0f, 1.0f, 1.0f);
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j+1;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
         }
     }
     glEnd();
@@ -448,7 +536,8 @@ void TriangleWindow::displayTrianglesC()
 
 void TriangleWindow::displayLines()
 {
-    glColor3f(1.0f, 1.0f, 1.0f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+    displaySeasons();
     glBegin(GL_LINES);
     uint id = 0;
 
@@ -459,59 +548,59 @@ void TriangleWindow::displayLines()
 
             id = i*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
             id = (i+1)*m_image.width() +j;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
             id = i*m_image.width() +(j+1);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j+1;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
             id = (i+1)*m_image.width() +j+1;
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
             id = (i+1)*m_image.width() +(j);
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
         }
     }
 
@@ -520,7 +609,8 @@ void TriangleWindow::displayLines()
 
 void TriangleWindow::displayTrianglesTexture()
 {
-    glColor3f(1.0f, 1.0f, 1.0f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+    displaySeasons();
     glBegin(GL_TRIANGLES);
     uint id = 0;
 
@@ -530,44 +620,50 @@ void TriangleWindow::displayTrianglesTexture()
         {
 
             id = i*m_image.width() +j;
-            displayColor(p[id].z);
+            //displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = i*m_image.width() +(j+1);
-            displayColor(p[id].z);
+           // displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
-            displayColor(p[id].z);
+            //displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
 
 
 
             id = i*m_image.width() +(j+1);
-            displayColor(p[id].z);
+            //displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j+1;
-            displayColor(p[id].z);
+           // displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
             id = (i+1)*m_image.width() +j;
-            displayColor(p[id].z);
+            //displayColor(p[id].getZ());
+            displaySeasons();
             glVertex3f(
-                        p[id].x,
-                        p[id].y,
-                        p[id].z);
+                        p[id].getX(),
+                        p[id].getY(),
+                        p[id].getZ());
         }
     }
     glEnd();
@@ -594,3 +690,58 @@ void TriangleWindow::displayColor(float alt)
     }
 
 }
+
+//TP3
+void TriangleWindow::setSeason(int i){
+
+    season = i;
+    GLfloat p[3];
+    switch(season){
+    case 0:
+        particules = new Particules(&m_image);
+        p[0] = 0.8f; p[1] = 0.8f; p[2] = 0.8f;
+        particules->setParticuleColor(p);
+        particules->setParticuleSize(2);
+        particules->init(0.04,1,3);
+        break;
+    case 1:
+        particules = NULL;
+        break;
+    case 2:
+        particules = NULL;
+        break;
+    case 3:
+        particules = new Particules(&m_image);
+        p[0] = 0.0f; p[1] = 0.0f; p[2] = 0.8f;
+        particules->setParticuleColor(p);
+        particules->init(0.08,1,100);
+        break;
+    }
+}
+
+void TriangleWindow::displaySeasons(){
+    switch (season){
+    case 0://Hiver
+        glClearColor(0.5f,0.5f,0.5f,1.0f);
+        particules->update();
+        glColor3f(1.0f, 1.0f, 1.0f);
+        break;
+    case 1://Printemps
+        glClearColor(0.75f,0.85f,1.0f,1.0f);
+        glColor3f(0.0f, 0.75f, 0.0f);
+        break;
+    case 2://Ete
+        glClearColor(0.0f,0.5f,0.8f,1.0f);
+        glColor3f(1.0f, 1.0f, 0.0f);
+        break;
+    case 3://Automne
+        glClearColor(0.92f,0.57f,0.13f,1.0f);
+        particules->update();
+        glColor3f(0.37f, 0.2f, 0.07f);
+        break;
+    default:
+        break;
+    }
+}
+
+
